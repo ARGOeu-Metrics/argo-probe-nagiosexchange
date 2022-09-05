@@ -1,0 +1,273 @@
+#!/usr/bin/perl
+
+# prologue
+use strict;
+use warnings;
+
+use File::stat;
+use Nagios::Plugin;
+
+use vars qw($VERSION $PROGNAME);
+$VERSION = '1.0';
+
+# get the base name of this script for use in the examples
+use File::Basename;
+$PROGNAME = basename($0);
+
+##############################################################################
+# Instantiate Nagios::Plugin object (the 'usage' parameter is mandatory)
+my $p = Nagios::Plugin->new(
+    usage => "Usage: $PROGNAME [ -v|--verbose ] [-t <timeout>]\n"
+           . "\t -F|--file file to check \n"
+           . "\t[ --critical  critical threshold in seconds ]\n"
+           . "\t[ --warning  warning threshold in seconds ]\n"
+           . "\t[ --owner Is the owner matching with the give one? ]\n"
+           . "\t[ --group Is the group matching with the give one? ]\n"
+           . "\t[ -f|plain  Is it a plain file? ]\n"
+           . "\t[ -d|directory  Is it a directory? ]\n"
+           . "\t[ -l|link  Is it a symbolic link? ]\n"
+           . "\t[ -S|socket  Is it a socket? ]\n"
+           . "\t[ -p|named-pipe  Is it a named pipe? ]\n"
+           . "\t[ -b|block-special  Is it a block-special file? ]\n"
+           . "\t[ -C|character-special  Is it a character-special file? ]\n"
+           . "\t[ -T|text  Is it a text file? (approximation) ]\n"
+           . "\t[ -B|binary Is it a binary file? (approximation) ]\n"
+           . "\t[ -z|zero  Has file zero size? ]\n"
+           . "\t[ -s|nonzero  Has file nonzero size? ]\n"
+           . "\t[ -r|readable  Is it readable by this effective user or group? ]\n"
+           . "\t[ -w|writable  Is it writable by this effective user or group? ]\n"
+           . "\t[ -x|executable  Is it executable by this effective user or group? ]\n"
+           . "\t[ -o|owned  Is it owned by this owned user or group? ]\n"
+           . "\t[ -R|real-readable  Is it readable by this real user or group? ]\n"
+           . "\t[ -W|real-writable  Is it writable by this real user or group? ]\n"
+           . "\t[ -X|real-executable  Is it executable by this real user or group? ]\n"
+           . "\t[ -O|real-owned  Is it owned by this real user or group? ]\n"
+           . "",
+    version => $VERSION,
+    blurb => "This plugin is a Nagios plugin written in Perl using the\n"
+           . "Nagios::Plugin modules.  It will look for file properties,\n"
+           . "by default it checks the file existence. ", 
+	extra => q{}
+);
+
+# Define and document the valid command line options
+# usage, help, version, timeout and verbose are defined by default.
+$p->add_arg(
+	spec => 'warning=s',
+	help => 
+qq{-w, --warning=INTEGER:INTEGER
+   Minimum and maximum number of allowable result, outside of which a
+   warning will be generated.  If omitted, no warning is generated.},
+	required => 0,
+);
+
+$p->add_arg(
+	spec => 'critical=s',
+	help => 
+qq{-c, --critical=INTEGER:INTEGER
+   Minimum and maximum number of the generated result, outside of
+   which a critical will be generated. },
+   required => 0,
+);
+
+$p->add_arg(
+	spec => 'file|F=s',
+	help => 
+qq{-F, --file
+   File to check.},
+    required => 1,
+);
+
+$p->add_arg(
+	spec => 'owner=s',
+	help => 
+qq{-o, --owner=STRING
+   Check if the file's owner matches the given one.},
+);
+
+$p->add_arg(
+	spec => 'group=s',
+	help => 
+qq{-g, --group=STRING
+   Check if the file's group matches the given one.},
+);
+
+$p->add_arg(
+	spec => 'plain|f+',
+	help => qq{-f  Check if the file is plain file},
+);
+$p->add_arg(
+	spec => 'directory|d+',
+	help => qq{-d  Check if the file is a directory},
+);
+$p->add_arg(
+	spec => 'link|l+',
+	help => qq{-l  Check if the file is a link},
+);
+$p->add_arg(
+	spec => 'socket|S+',
+	help => qq{-S  Check if the file us a socket},
+);
+$p->add_arg(
+	spec => 'named-pipe|p+',
+	help => qq{-p  Check if the file is a named pipe (a "fifo")},
+);
+$p->add_arg(
+	spec => 'block-special|b+',
+	help => qq{-b  Check if the file is a block-special file (like a disk)},
+);
+$p->add_arg(
+	spec => 'character-special|C+',
+	help => qq{-C  Check if the file is a character-special file (like a terminal)},
+);
+
+$p->add_arg(
+	spec => 'text|T+',
+	help => qq{-T  Check if the file is a text file (approximated)},
+);
+$p->add_arg(
+	spec => 'binary|B+',
+	help => qq{-B  Check if the file is a binary file (approximated)},
+);
+
+$p->add_arg(
+	spec => 'zero|z+',
+	help => qq{-z  Check if the file is empty},
+);
+$p->add_arg(
+	spec => 'nonzero|s+',
+	help => qq{-s  Check if the file is not empty},
+);
+
+
+$p->add_arg(
+	spec => 'readable|r+',
+	help => qq{-r  Check if the file is readable by this effective user or group},
+);
+$p->add_arg(
+	spec => 'writable|w+',
+	help => qq{-w  Check if the file is writable by this effective user or group},
+);
+$p->add_arg(
+	spec => 'executable|x+',
+	help => qq{-x  Check if the file is executable by this effective user or group},
+);
+$p->add_arg(
+	spec => 'owned|o+',
+	help => qq{-o  Check if the file is owned by this effective user or group},
+);
+$p->add_arg(
+	spec => 'real-readable|R+',
+	help => qq{-R  Check if the file is readable by this real user or group},
+);
+$p->add_arg(
+	spec => 'real-writable|W+',
+	help => qq{-W  Check if the file is writable by this real user or group},
+);
+$p->add_arg(
+	spec => 'real-executable|X+',
+	help => qq{-X  Check if the file is executable by this real user or group},
+);
+$p->add_arg(
+	spec => 'real-owned|O+',
+	help => qq{-O  Check if the file is owned by this real user or group},
+);
+
+# Parse arguments and process standard ones (e.g. usage, help, version)
+$p->getopts;
+
+alarm $p->opts->timeout;
+
+unless (-e $p->opts->file) {
+	$p->nagios_exit(return_code => CRITICAL, 
+                        message => "File not found: $p->{opts}->{file}");
+}
+
+# Check file type
+if ($p->opts->{'link'} &&  ! -l $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a symbolic link");
+}
+if ($p->opts->{'plain'} &&  ! -f $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a regular file");
+}
+if ($p->opts->{'directory'} &&  ! -d $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a directory");
+}
+if ($p->opts->{'socket'} &&  ! -S $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a socket");
+}
+if ($p->opts->{'named-pipe'} &&  ! -p $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a named pipe (a \"fifo\")");
+}
+if ($p->opts->{'block-special'} &&  ! -b $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a block-special file (like a disk)");
+}
+if ($p->opts->{'character-special'} &&  ! -c $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a character-special file (like a terminal)");
+}
+
+# Text or Binary file
+if ($p->opts->text && ! -T $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a text file");
+}
+if ($p->opts->binary && ! -B $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not a binary file");
+}
+
+# Zero and nonzero size
+if ($p->opts->zero && ! -z $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not empty");
+}
+if ($p->opts->nonzero && ! -s $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is empty");
+}
+
+my $real_runner = getpwuid($<);
+my $effective_runner = getpwuid($>);
+
+# Readable, Writable, Executable, Owned
+if ($p->opts->readable && ! -r $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not readable by $effective_runner");
+}
+if ($p->opts->writable && ! -w $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not writable by $effective_runner");
+}
+if ($p->opts->executable && ! -x $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not executable by $effective_runner");
+}
+if ($p->opts->owned && ! -o $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not owned by $effective_runner");
+}
+if ($p->opts->{'real-readable'} && ! -R $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not readable by $real_runner");
+}
+if ($p->opts->{'real-writable'} && ! -W $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not writable by $real_runner");
+}
+if ($p->opts->{'real-executable'} && ! -X $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not executable by $real_runner");
+}
+if ($p->opts->{'real-owned'} && ! -O $p->opts->file) {
+	$p->nagios_exit(CRITICAL, "$p->{opts}->{file} is not owned by $real_runner");
+}
+
+# owner and group
+my $fstat = stat( $p->opts->file);
+my $owner = getpwuid($fstat->uid);
+if ($p->opts->owner && ($owner ne $p->opts->owner)) {
+	$p->nagios_exit(return_code => CRITICAL, 
+                        message => "File with different owner: $p->{opts}->{file} has $owner instead of $p->{opts}->{owner}");
+}
+my $group = getgrgid($fstat->gid);
+if ($p->opts->group && ($group ne $p->opts->group)) {
+	$p->nagios_exit(return_code => CRITICAL, 
+                        message => "File with different group: $p->{opts}->{file} has $group instead of $p->{opts}->{group}");
+}
+
+# check age
+my $age = time - $fstat->mtime;
+my $code = $p->check_threshold($age);
+$p->nagios_exit( $code, "Threshold check failed, the file age is: $age seconds" ) if $code != OK;
+
+# else everything is ok
+$p->nagios_exit( OK, "$p->{opts}->{file}");
